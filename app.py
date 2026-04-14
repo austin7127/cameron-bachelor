@@ -101,6 +101,7 @@ st.markdown("""
 ACTIVITIES = [
     "Fly Fishing",
     "Rock Climbing",
+    "River Rafting",
     "Sport Shooting",
     "Pheasant Hunting",
     "Golf",
@@ -113,6 +114,7 @@ LOCATION_SCORES = {
     "Moab, Utah": {
         "Fly Fishing":       2,
         "Rock Climbing":     3,
+        "River Rafting":     3,
         "Sport Shooting":    2,
         "Pheasant Hunting":  1,
         "Golf":              2,
@@ -122,7 +124,8 @@ LOCATION_SCORES = {
     },
     "Scottsdale/Sedona, Arizona": {
         "Fly Fishing":       1,
-        "Rock Climbing":     3,
+        "Rock Climbing":     2,
+        "River Rafting":     1,
         "Sport Shooting":    3,
         "Pheasant Hunting":  1,
         "Golf":              3,
@@ -133,6 +136,7 @@ LOCATION_SCORES = {
     "Bozeman, Montana": {
         "Fly Fishing":       3,
         "Rock Climbing":     1,
+        "River Rafting":     2,
         "Sport Shooting":    2,
         "Pheasant Hunting":  3,
         "Golf":              2,
@@ -196,7 +200,7 @@ def score_locations(votes_df: pd.DataFrame) -> dict:
     activity_weights = {}
     for activity in ACTIVITIES:
         if activity in votes_df.columns:
-            activity_weights[activity] = sum(9 - int(r) for r in votes_df[activity] if r)
+            activity_weights[activity] = sum(10 - int(r) for r in votes_df[activity] if r)
         else:
             activity_weights[activity] = 0
 
@@ -222,7 +226,7 @@ tab_vote, tab_results = st.tabs(["🗳️ Cast Your Vote", "📊 Results"])
 
 with tab_vote:
     st.subheader("Rank the Activities")
-    st.caption("Drag to reorder — top = most important, bottom = least important.")
+    st.caption("Drag to reorder — top = most important to you, bottom = least important.")
 
     name = st.text_input("Your name", placeholder="e.g. Jake")
     st.markdown("")
@@ -325,7 +329,7 @@ with tab_results:
             activity_weights = {}
             for activity in ACTIVITIES:
                 if activity in votes_df.columns:
-                    activity_weights[activity] = sum(9 - int(r) for r in votes_df[activity] if r)
+                    activity_weights[activity] = sum(10 - int(r) for r in votes_df[activity] if r)
                 else:
                     activity_weights[activity] = 0
 
