@@ -88,8 +88,8 @@ st.markdown("""
         background-color: #EDE4D0 !important;
         border: 1.5px solid #C4A45A !important;
         border-radius: 8px !important;
-        color: #3D2B1F !important;
-        font-weight: 500 !important;
+        color: #000000 !important;
+        font-weight: 600 !important;
         padding: 10px 14px !important;
         margin: 4px 0 !important;
     }
@@ -170,9 +170,9 @@ ACCOMMODATIONS = [
 
 BUDGET_OPTIONS = [
     "Under $400",
-    "$400 – $600",
-    "$600 – $800",
-    "$800 – $1,000",
+    "$400 to $600",
+    "$600 to $800",
+    "$800 to $1,000",
     "$1,000+",
 ]
 
@@ -200,8 +200,8 @@ def get_stay_sheet():
     try:
         return wb.worksheet("stay_budget")
     except gspread.WorksheetNotFound:
-        ws = wb.add_worksheet(title="stay_budget", rows=100, cols=10)
-        ws.append_row(["timestamp", "name"] + ACCOMMODATIONS + ["budget"])
+        ws = wb.add_worksheet(title="stay_budget", rows=100, cols=5)
+        ws.append_row(["timestamp", "name", "accommodation", "budget"])
         return ws
 
 def load_votes() -> pd.DataFrame:
@@ -215,7 +215,7 @@ def load_stay_votes() -> pd.DataFrame:
     sheet = get_stay_sheet()
     data = sheet.get_all_records()
     if not data:
-        return pd.DataFrame(columns=["timestamp", "name"] + ACCOMMODATIONS + ["budget"])
+        return pd.DataFrame(columns=["timestamp", "name", "accommodation", "budget"])
     return pd.DataFrame(data)
 
 def save_vote(name: str, rankings: dict) -> None:
@@ -223,9 +223,9 @@ def save_vote(name: str, rankings: dict) -> None:
     row = [datetime.now().strftime("%Y-%m-%d %H:%M:%S"), name] + [rankings[a] for a in ACTIVITIES]
     sheet.append_row(row)
 
-def save_stay_vote(name: str, accom_rankings: dict, budget: str) -> None:
+def save_stay_vote(name: str, accom_choice: str, budget: str) -> None:
     sheet = get_stay_sheet()
-    row = [datetime.now().strftime("%Y-%m-%d %H:%M:%S"), name] + [accom_rankings[a] for a in ACCOMMODATIONS] + [budget]
+    row = [datetime.now().strftime("%Y-%m-%d %H:%M:%S"), name, accom_choice, budget]
     sheet.append_row(row)
 
 
@@ -308,8 +308,11 @@ with tab_vote:
         st.subheader("Step 2 — Stay & Budget")
         st.caption("Almost done! Tell us how you'd like to stay and what budget works for you.")
 
-        st.markdown("**Rank your accommodation preferences** (drag to reorder):")
-        sorted_accom = sort_items(ACCOMMODATIONS, direction="vertical", key="accom_sort_v1")
+        accom_choice = st.radio(
+            "**Where would you prefer to stay?**",
+            ACCOMMODATIONS,
+            horizontal=False,
+        )
 
         st.markdown("")
         budget = st.radio(
@@ -322,14 +325,13 @@ with tab_vote:
         stay_submitted = st.button("Submit Stay & Budget", use_container_width=True, type="primary")
 
         if stay_submitted:
-            accom_rankings = {a: sorted_accom.index(a) + 1 for a in ACCOMMODATIONS}
             try:
                 stay_df = load_stay_votes()
                 existing = [n.lower() for n in stay_df["name"].tolist()] if not stay_df.empty else []
                 if st.session_state.voter_name.lower() in existing:
                     st.warning("Stay & budget preference already submitted.")
                 else:
-                    save_stay_vote(st.session_state.voter_name, accom_rankings, budget)
+                    save_stay_vote(st.session_state.voter_name, accom_choice, budget)
                     st.success("All done! Your full response has been recorded. 🎉")
                     st.session_state.activity_vote_submitted = False
                     st.session_state.voter_name = ""
@@ -448,24 +450,20 @@ with tab_results:
 
                     # Accommodation leaderboard
                     st.markdown("#### Accommodation Preference")
-                    accom_weights = {}
-                    for a in ACCOMMODATIONS:
-                        if a in stay_df.columns:
-                            accom_weights[a] = sum(6 - int(r) for r in stay_df[a] if r)
-                        else:
-                            accom_weights[a] = 0
+                    if "accommodation" in stay_df.columns:
+                        accom_counts = stay_df["accommodation"].value_counts()
+                        sorted_accom = [(a, accom_counts.get(a, 0)) for a in ACCOMMODATIONS]
+                        sorted_accom = sorted(sorted_accom, key=lambda x: x[1], reverse=True)
+                        max_accom = sorted_accom[0][1] if sorted_accom else 1
 
-                    sorted_accom = sorted(accom_weights.items(), key=lambda x: x[1], reverse=True)
-                    max_accom = sorted_accom[0][1] if sorted_accom else 1
-
-                    for i, (accom, weight) in enumerate(sorted_accom):
-                        bar_pct = int(weight / max_accom * 100) if max_accom > 0 else 0
-                        medal = MEDAL[i] if i < 3 else ""
-                        st.markdown(f"""
+                        for i, (accom, c) in enumerate(sorted_accom):
+                            bar_pct = int(c / stay_count * 100) if stay_count > 0 else 0
+                            medal = MEDAL[i] if i < 3 and c > 0 else ""
+                            st.markdown(f"""
 <div style="margin-bottom:8px;">
     <div style="display:flex; justify-content:space-between; color:#3D2B1F; font-size:0.9rem; margin-bottom:3px;">
         <span style="font-weight:600;">{medal} {accom}</span>
-        <span style="color:#8B6914;">{weight} pts</span>
+        <span style="color:#8B6914;">{c} vote{'s' if c != 1 else ''}</span>
     </div>
     <div style="background-color:#D6C9A8; border-radius:6px; height:8px;">
         <div style="background-color:#8B6914; width:{bar_pct}%; height:8px; border-radius:6px;"></div>
