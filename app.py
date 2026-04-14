@@ -151,14 +151,23 @@ with tab_vote:
 
     st.markdown("---")
 
+    # Initialize session state for rankings
+    for activity in ACTIVITIES:
+        if f"rank_{activity}" not in st.session_state:
+            st.session_state[f"rank_{activity}"] = None
+
     cols = st.columns(2)
     rankings = {}
     for i, activity in enumerate(ACTIVITIES):
+        # Available options = all ranks minus those already picked by other activities
+        used = {st.session_state[f"rank_{a}"] for a in ACTIVITIES if a != activity and st.session_state.get(f"rank_{a}") is not None}
+        available = [r for r in range(1, 9) if r not in used]
+
         col = cols[i % 2]
         with col:
             rankings[activity] = st.selectbox(
                 activity,
-                options=[1, 2, 3, 4, 5, 6, 7, 8],
+                options=available,
                 key=f"rank_{activity}",
             )
 
