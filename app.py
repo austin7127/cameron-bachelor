@@ -231,7 +231,7 @@ with tab_vote:
     name = st.text_input("Your name", placeholder="e.g. Jake")
     st.markdown("")
 
-    sorted_activities = sort_items(ACTIVITIES, direction="vertical", key="activity_sort")
+    sorted_activities = sort_items(ACTIVITIES, direction="vertical", key="activity_sort_v2")
 
     st.markdown("")
     submitted = st.button("Submit Vote", use_container_width=True, type="primary")
