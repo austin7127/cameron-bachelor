@@ -160,22 +160,49 @@ LOCATION_EMOJI = {
 
 MEDAL = ["🥇", "🥈", "🥉"]
 
+ACCOMMODATIONS = [
+    "Luxury Hotel / Resort",
+    "Vacation Rental House (VRBO/Airbnb)",
+    "Boutique / Local Inn",
+    "Glamping",
+    "Camping",
+]
+
+BUDGET_OPTIONS = [
+    "Under $400",
+    "$400 – $600",
+    "$600 – $800",
+    "$800 – $1,000",
+    "$1,000+",
+]
+
 TOTAL_GUESTS = 10
 
 # ── Google Sheets connection ──────────────────────────────────────────────────
 
-def get_sheet():
+def get_credentials():
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive",
     ]
-    creds = Credentials.from_service_account_info(
+    return Credentials.from_service_account_info(
         st.secrets["gcp_service_account"],
         scopes=scopes,
     )
-    gc = gspread.authorize(creds)
+
+def get_sheet():
+    gc = gspread.authorize(get_credentials())
     return gc.open(st.secrets["sheet_name"]).sheet1
 
+def get_stay_sheet():
+    gc = gspread.authorize(get_credentials())
+    wb = gc.open(st.secrets["sheet_name"])
+    try:
+        return wb.worksheet("stay_budget")
+    except gspread.WorksheetNotFound:
+        ws = wb.add_worksheet(title="stay_budget", rows=100, cols=10)
+        ws.append_row(["timestamp", "name"] + ACCOMMODATIONS + ["budget"])
+        return ws
 
 def load_votes() -> pd.DataFrame:
     sheet = get_sheet()
@@ -184,10 +211,21 @@ def load_votes() -> pd.DataFrame:
         return pd.DataFrame(columns=["timestamp", "name"] + ACTIVITIES)
     return pd.DataFrame(data)
 
+def load_stay_votes() -> pd.DataFrame:
+    sheet = get_stay_sheet()
+    data = sheet.get_all_records()
+    if not data:
+        return pd.DataFrame(columns=["timestamp", "name"] + ACCOMMODATIONS + ["budget"])
+    return pd.DataFrame(data)
 
 def save_vote(name: str, rankings: dict) -> None:
     sheet = get_sheet()
     row = [datetime.now().strftime("%Y-%m-%d %H:%M:%S"), name] + [rankings[a] for a in ACTIVITIES]
+    sheet.append_row(row)
+
+def save_stay_vote(name: str, accom_rankings: dict, budget: str) -> None:
+    sheet = get_stay_sheet()
+    row = [datetime.now().strftime("%Y-%m-%d %H:%M:%S"), name] + [accom_rankings[a] for a in ACCOMMODATIONS] + [budget]
     sheet.append_row(row)
 
 
@@ -225,7 +263,14 @@ tab_vote, tab_results = st.tabs(["🗳️ Cast Your Vote", "📊 Results"])
 # ── Vote tab ──────────────────────────────────────────────────────────────────
 
 with tab_vote:
-    st.subheader("Rank the Activities")
+    # Track whether activity vote was just submitted
+    if "activity_vote_submitted" not in st.session_state:
+        st.session_state.activity_vote_submitted = False
+    if "voter_name" not in st.session_state:
+        st.session_state.voter_name = ""
+
+    # ── Step 1: Activity ranking ──
+    st.subheader("Step 1 — Rank the Activities")
     st.caption("Drag to reorder — top = most important to you, bottom = least important.")
 
     name = st.text_input("Your name", placeholder="e.g. Jake")
@@ -234,26 +279,62 @@ with tab_vote:
     sorted_activities = sort_items(ACTIVITIES, direction="vertical", key="activity_sort_v2")
 
     st.markdown("")
-    submitted = st.button("Submit Vote", use_container_width=True, type="primary")
 
-    if submitted:
-        if not name.strip():
-            st.warning("Please enter your name.")
-        else:
-            rankings = {activity: sorted_activities.index(activity) + 1 for activity in ACTIVITIES}
-            try:
-                votes_df = load_votes()
-                existing_names = [n.lower() for n in votes_df["name"].tolist()] if not votes_df.empty else []
-                if name.strip().lower() in existing_names:
-                    st.warning(f"A vote from **{name}** has already been submitted.")
-                else:
-                    save_vote(name.strip(), rankings)
-                    st.success(f"Vote submitted! Thanks, {name.strip()} 🤙")
+    if not st.session_state.activity_vote_submitted:
+        submitted = st.button("Submit Activity Vote", use_container_width=True, type="primary")
+
+        if submitted:
+            if not name.strip():
+                st.warning("Please enter your name.")
+            else:
+                rankings = {activity: sorted_activities.index(activity) + 1 for activity in ACTIVITIES}
+                try:
                     votes_df = load_votes()
-                    count = len(votes_df)
-                    st.info(f"**{count} of {TOTAL_GUESTS}** crew members have voted.")
+                    existing_names = [n.lower() for n in votes_df["name"].tolist()] if not votes_df.empty else []
+                    if name.strip().lower() in existing_names:
+                        st.warning(f"A vote from **{name}** has already been submitted.")
+                    else:
+                        save_vote(name.strip(), rankings)
+                        st.session_state.activity_vote_submitted = True
+                        st.session_state.voter_name = name.strip()
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Something went wrong saving your vote: {e}")
+
+    # ── Step 2: Stay & Budget (auto-populates after activity vote) ──
+    if st.session_state.activity_vote_submitted:
+        st.success(f"Activity vote submitted! Thanks, {st.session_state.voter_name} 🤙")
+        st.divider()
+        st.subheader("Step 2 — Stay & Budget")
+        st.caption("Almost done! Tell us how you'd like to stay and what budget works for you.")
+
+        st.markdown("**Rank your accommodation preferences** (drag to reorder):")
+        sorted_accom = sort_items(ACCOMMODATIONS, direction="vertical", key="accom_sort_v1")
+
+        st.markdown("")
+        budget = st.radio(
+            "**Your comfortable per-person budget for the trip:**",
+            BUDGET_OPTIONS,
+            horizontal=False,
+        )
+
+        st.markdown("")
+        stay_submitted = st.button("Submit Stay & Budget", use_container_width=True, type="primary")
+
+        if stay_submitted:
+            accom_rankings = {a: sorted_accom.index(a) + 1 for a in ACCOMMODATIONS}
+            try:
+                stay_df = load_stay_votes()
+                existing = [n.lower() for n in stay_df["name"].tolist()] if not stay_df.empty else []
+                if st.session_state.voter_name.lower() in existing:
+                    st.warning("Stay & budget preference already submitted.")
+                else:
+                    save_stay_vote(st.session_state.voter_name, accom_rankings, budget)
+                    st.success("All done! Your full response has been recorded. 🎉")
+                    st.session_state.activity_vote_submitted = False
+                    st.session_state.voter_name = ""
             except Exception as e:
-                st.error(f"Something went wrong saving your vote: {e}")
+                st.error(f"Something went wrong saving your stay preference: {e}")
 
 # ── Results tab ───────────────────────────────────────────────────────────────
 
@@ -353,6 +434,67 @@ with tab_results:
             if count < TOTAL_GUESTS:
                 st.markdown("")
                 st.caption(f"Results update live as votes come in. {TOTAL_GUESTS - count} vote(s) still pending.")
+
+            # ── Stay & Budget results ──
+            st.markdown("")
+            st.markdown("### 🏕️ Stay & Budget")
+            try:
+                stay_df = load_stay_votes()
+                if stay_df.empty:
+                    st.info("No stay & budget votes yet.")
+                else:
+                    stay_count = len(stay_df)
+                    st.caption(f"{stay_count} of {TOTAL_GUESTS} stay & budget responses")
+
+                    # Accommodation leaderboard
+                    st.markdown("#### Accommodation Preference")
+                    accom_weights = {}
+                    for a in ACCOMMODATIONS:
+                        if a in stay_df.columns:
+                            accom_weights[a] = sum(6 - int(r) for r in stay_df[a] if r)
+                        else:
+                            accom_weights[a] = 0
+
+                    sorted_accom = sorted(accom_weights.items(), key=lambda x: x[1], reverse=True)
+                    max_accom = sorted_accom[0][1] if sorted_accom else 1
+
+                    for i, (accom, weight) in enumerate(sorted_accom):
+                        bar_pct = int(weight / max_accom * 100) if max_accom > 0 else 0
+                        medal = MEDAL[i] if i < 3 else ""
+                        st.markdown(f"""
+<div style="margin-bottom:8px;">
+    <div style="display:flex; justify-content:space-between; color:#3D2B1F; font-size:0.9rem; margin-bottom:3px;">
+        <span style="font-weight:600;">{medal} {accom}</span>
+        <span style="color:#8B6914;">{weight} pts</span>
+    </div>
+    <div style="background-color:#D6C9A8; border-radius:6px; height:8px;">
+        <div style="background-color:#8B6914; width:{bar_pct}%; height:8px; border-radius:6px;"></div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+                    # Budget distribution
+                    st.markdown("")
+                    st.markdown("#### Budget Range")
+                    if "budget" in stay_df.columns:
+                        budget_counts = stay_df["budget"].value_counts()
+                        for option in BUDGET_OPTIONS:
+                            c = budget_counts.get(option, 0)
+                            bar_pct = int(c / stay_count * 100) if stay_count > 0 else 0
+                            st.markdown(f"""
+<div style="margin-bottom:8px;">
+    <div style="display:flex; justify-content:space-between; color:#3D2B1F; font-size:0.9rem; margin-bottom:3px;">
+        <span style="font-weight:600;">{option}</span>
+        <span style="color:#8B6914;">{c} vote{'s' if c != 1 else ''}</span>
+    </div>
+    <div style="background-color:#D6C9A8; border-radius:6px; height:8px;">
+        <div style="background-color:#6B8C42; width:{bar_pct}%; height:8px; border-radius:6px;"></div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+            except Exception as e:
+                st.warning(f"Could not load stay & budget results: {e}")
 
             # ── Raw votes ──
             with st.expander("See all votes"):
