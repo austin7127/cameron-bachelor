@@ -15,7 +15,7 @@ from streamlit_sortables import sort_items
 
 st.set_page_config(
     page_title="Cameron's Bachelor Party",
-    page_icon="🎯",
+    page_icon="🥂",
     layout="centered",
 )
 
@@ -212,7 +212,7 @@ def score_locations(votes_df: pd.DataFrame) -> dict:
 
 # ── UI ────────────────────────────────────────────────────────────────────────
 
-st.title("🎯 Cameron's Bachelor Party")
+st.title("🥂 Cameron's Bachelor Party")
 st.markdown("**Help decide where the crew is headed. Rank what matters most to you.**")
 st.divider()
 
@@ -321,7 +321,7 @@ with tab_results:
             st.markdown("")
 
             # ── Activity priorities ──
-            st.markdown("### 🎯 What the Group Cares About Most")
+            st.markdown("### 🥂 What the Group Cares About Most")
             activity_weights = {}
             for activity in ACTIVITIES:
                 if activity in votes_df.columns:
